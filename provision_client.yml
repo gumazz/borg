@@ -1,0 +1,72 @@
+  - name: Setup Borg client
+    hosts: client
+    become: yes
+    tasks:    
+    - name: install borgbackup
+      yum:
+        name:
+          - borgbackup
+        state: present
+        update_cache: true  
+
+    - name: Generate an OpenSSH keypair with the default values (4096 bits, rsa)
+      openssh_keypair:
+        path: /root/.ssh/id_rsa
+        owner: root
+        group: root
+
+    - name: Fix owner of the generated pub key
+      file:
+        path: /root/.ssh/id_rsa.pub
+        owner: root
+        group: root
+
+    - name: Fetch public key
+      fetch:
+        src: /root/.ssh/id_rsa.pub
+        dest: tmp
+
+  - hosts: server
+    become: yes
+    tasks:
+      - name: Copy Public key to server VM
+        copy:
+          src: tmp/client/root/.ssh/id_rsa.pub
+          dest: /home/borg/.ssh/authorized_keys
+          owner: borg
+          group: borg
+          mode: '0600'
+
+  - hosts: client
+    become: yes
+    tasks:
+      - name: Copy borg-backup.service to client
+        copy:
+          src: tmp/borg-backup.service
+          dest: /etc/systemd/system/borg-backup.service
+          owner: root
+          group: root
+
+      - name: Copy borg-backup.timer to client
+        copy:
+          src: tmp/borg-backup.timer
+          dest: /etc/systemd/system/borg-backup.timer
+          owner: root
+          group: root
+
+      - name: Configure Borg backups
+        shell:
+          borg init --encryption=none borg@192.168.11.160:/var/backup/
+
+      - name: List Borg backups
+        shell:
+          borg list borg@192.168.11.160:/var/backup/
+
+      - name: Enable Borg backup timer
+        shell:
+          systemctl enable borg-backup.timer
+
+      - name: Start Borg backup timer
+        shell:
+          systemctl start borg-backup.timer
+
